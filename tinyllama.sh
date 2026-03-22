@@ -6,8 +6,60 @@ VENV_DIR="$PROJECT_ROOT/.venv"
 MODEL_DIR="$PROJECT_ROOT/models"
 REQ_FILE="$PROJECT_ROOT/requirements.txt"
 
+if [ -t 1 ]; then
+  C_RESET="$(printf '\033[0m')"
+  C_BOLD="$(printf '\033[1m')"
+  C_DIM="$(printf '\033[2m')"
+  C_CYAN="$(printf '\033[36m')"
+  C_GREEN="$(printf '\033[32m')"
+  C_YELLOW="$(printf '\033[33m')"
+  C_RED="$(printf '\033[31m')"
+  C_MAGENTA="$(printf '\033[35m')"
+else
+  C_RESET=""
+  C_BOLD=""
+  C_DIM=""
+  C_CYAN=""
+  C_GREEN=""
+  C_YELLOW=""
+  C_RED=""
+  C_MAGENTA=""
+fi
+
+print_header() {
+  printf "\n%s%sTinyLlama Bootstrap%s\n" "$C_BOLD" "$C_CYAN" "$C_RESET"
+  printf "%sPrepare Python, install dependencies, and launch local chat%s\n\n" "$C_DIM" "$C_RESET"
+}
+
+print_rule() {
+  printf "%s%s== %s ==%s\n" "$C_BOLD" "$C_CYAN" "$1" "$C_RESET"
+}
+
 log() {
-  printf "[tinyllama] %s\n" "$*"
+  printf "%s[%sinfo%s]%s %s\n" "$C_BOLD" "$C_CYAN" "$C_RESET" "$C_RESET" "$*"
+}
+
+success() {
+  printf "%s[%s ok %s]%s %s\n" "$C_BOLD" "$C_GREEN" "$C_RESET" "$C_RESET" "$*"
+}
+
+warn() {
+  printf "%s[%swarn%s]%s %s\n" "$C_BOLD" "$C_YELLOW" "$C_RESET" "$C_RESET" "$*"
+}
+
+fail() {
+  printf "%s[%serr %s]%s %s\n" "$C_BOLD" "$C_RED" "$C_RESET" "$C_RESET" "$*" >&2
+}
+
+hint() {
+  printf "%s%s%s\n" "$C_DIM" "$*" "$C_RESET"
+}
+
+show_environment() {
+  printf "%sProject%s  %s\n" "$C_BOLD" "$C_RESET" "$PROJECT_ROOT"
+  printf "%sVenv%s     %s\n" "$C_BOLD" "$C_RESET" "$VENV_DIR"
+  printf "%sModels%s   %s\n" "$C_BOLD" "$C_RESET" "$MODEL_DIR"
+  printf "\n"
 }
 
 have_cmd() {
@@ -20,16 +72,16 @@ run_as_root() {
   elif have_cmd sudo; then
     sudo "$@"
   else
-    log "Need elevated privileges to run: $*"
+    fail "Need elevated privileges to run: $*"
     exit 1
   fi
 }
 
 install_python_macos() {
-  log "Python not found. Installing with Homebrew..."
+  warn "Python not found. Installing with Homebrew..."
 
   if ! have_cmd brew; then
-    log "Homebrew is not installed. Install Homebrew first: https://brew.sh"
+    fail "Homebrew is not installed. Install Homebrew first: https://brew.sh"
     exit 1
   fi
 
@@ -37,10 +89,10 @@ install_python_macos() {
 }
 
 install_python_windows() {
-  log "Python not found. Installing with winget..."
+  warn "Python not found. Installing with winget..."
 
   if ! have_cmd winget; then
-    log "winget not found. Install App Installer from Microsoft Store and retry."
+    fail "winget not found. Install App Installer from Microsoft Store and retry."
     exit 1
   fi
 
@@ -48,7 +100,7 @@ install_python_windows() {
 }
 
 install_python_linux() {
-  log "Python not found. Detecting Linux package manager..."
+  warn "Python not found. Detecting Linux package manager..."
 
   if have_cmd apt-get; then
     run_as_root apt-get update
@@ -77,12 +129,12 @@ install_python_linux() {
   fi
 
   if have_cmd rpm; then
-    log "Detected RPM-based system, but no supported installer (dnf/yum/zypper) was found."
-    log "Please install Python 3 manually, then rerun this script."
+    fail "Detected RPM-based system, but no supported installer (dnf/yum/zypper) was found."
+    hint "Please install Python 3 manually, then rerun this script."
     exit 1
   fi
 
-  log "No supported Linux package manager found (apt, pacman, dnf/yum/zypper)."
+  fail "No supported Linux package manager found (apt, pacman, dnf/yum/zypper)."
   exit 1
 }
 
@@ -110,7 +162,7 @@ ensure_python() {
       install_python_windows
       ;;
     *)
-      log "Unsupported OS: $os_name"
+      fail "Unsupported OS: $os_name"
       exit 1
       ;;
   esac
@@ -120,7 +172,7 @@ ensure_python() {
   elif have_cmd python; then
     PYTHON_BIN="python"
   else
-    log "Python install appears to have failed (python not found in PATH)."
+    fail "Python install appears to have failed (python not found in PATH)."
     exit 1
   fi
 }
@@ -129,8 +181,9 @@ create_venv() {
   if [ ! -d "$VENV_DIR" ]; then
     log "Creating virtual environment in $VENV_DIR"
     "$PYTHON_BIN" -m venv "$VENV_DIR"
+    success "Virtual environment created"
   else
-    log "Using existing virtual environment: $VENV_DIR"
+    success "Using existing virtual environment: $VENV_DIR"
   fi
 }
 
@@ -142,20 +195,22 @@ activate_venv() {
     # shellcheck disable=SC1091
     source "$VENV_DIR/Scripts/activate"
   else
-    log "Could not find virtualenv activate script."
+    fail "Could not find virtualenv activate script."
     exit 1
   fi
+  success "Virtual environment activated"
 }
 
 install_dependencies() {
   if [ ! -f "$REQ_FILE" ]; then
-    log "Missing requirements.txt at $REQ_FILE"
+    fail "Missing requirements.txt at $REQ_FILE"
     exit 1
   fi
 
   log "Installing Python dependencies..."
   python -m pip install --upgrade pip
   python -m pip install -r "$REQ_FILE"
+  success "Dependencies installed"
 }
 
 has_installed_model() {
@@ -174,7 +229,7 @@ bootstrap_only_if_requested() {
   fi
 
   if has_installed_model; then
-    log "Bootstrap complete. Model already installed."
+    success "Bootstrap complete. Model already installed."
     exit 0
   fi
 
@@ -182,37 +237,45 @@ bootstrap_only_if_requested() {
     log "No installed model found. Auto-downloading: ${AUTO_DOWNLOAD_MODEL}"
     python download_model.py --model "${AUTO_DOWNLOAD_MODEL}"
     if has_installed_model; then
-      log "Bootstrap complete. Model download finished."
+      success "Bootstrap complete. Model download finished."
       exit 0
     fi
-    log "Bootstrap finished, but no installed model was detected."
+    fail "Bootstrap finished, but no installed model was detected."
     exit 1
   fi
 
-  log "Bootstrap complete, but no model is installed."
-  log "Run: python download_model.py --model tinyllama|smollm2|smollm3"
+  warn "Bootstrap complete, but no model is installed."
+  hint "Run: python download_model.py --model tinyllama|smollm2|smollm3"
   exit 0
 }
 
 run_cli_if_models_present() {
   if ! has_installed_model; then
-    log "No installed model found in $MODEL_DIR."
-    log "Run: python download_model.py"
+    warn "No installed model found in $MODEL_DIR."
+    hint "Run: python download_model.py"
     exit 0
   fi
 
   cd "$PROJECT_ROOT"
+  print_rule "Launch"
+  success "Environment ready"
   log "Launching CLI..."
   python chat.py
 }
 
 main() {
   cd "$PROJECT_ROOT"
+  print_header
+  show_environment
+  print_rule "Python"
   ensure_python
-  log "Using Python: $PYTHON_BIN"
+  success "Using Python: $PYTHON_BIN"
+  print_rule "Environment"
   create_venv
   activate_venv
+  print_rule "Dependencies"
   install_dependencies
+  print_rule "Models"
   bootstrap_only_if_requested
   run_cli_if_models_present
 }

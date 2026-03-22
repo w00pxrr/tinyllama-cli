@@ -6,9 +6,14 @@ import os
 from pathlib import Path
 
 from huggingface_hub import snapshot_download
+from rich import box
+from rich.align import Align
+from rich.console import Group
 from rich.console import Console
 from rich.panel import Panel
 from rich.prompt import Prompt
+from rich.table import Table
+from rich.text import Text
 
 MODEL_CHOICES = {
     "tinyllama": "TinyLlama/TinyLlama-1.1B-Chat-v1.0",
@@ -17,6 +22,45 @@ MODEL_CHOICES = {
 }
 
 console = Console()
+
+
+def render_header() -> None:
+    hero = Group(
+        Align.center(Text("Local Model Setup", style="bold white")),
+        Align.center(Text("Download a Hugging Face model into ./models", style="bright_black")),
+        Text(""),
+        Align.center(
+            Text.assemble(
+                ("Available: ", "white"),
+                ("tinyllama", "bold cyan"),
+                ("  ", "white"),
+                ("smollm2", "bold green"),
+                ("  ", "white"),
+                ("smollm3", "bold magenta"),
+            )
+        ),
+    )
+    console.print(
+        Panel(
+            hero,
+            title="[bold cyan]Model Downloader[/bold cyan]",
+            border_style="cyan",
+            box=box.DOUBLE_EDGE,
+            padding=(1, 2),
+        )
+    )
+
+
+def print_note(message: str, title: str = "Status", style: str = "cyan") -> None:
+    console.print(
+        Panel(
+            Text(message, style=f"bold {style}"),
+            title=title,
+            border_style=style,
+            box=box.ROUNDED,
+            padding=(0, 1),
+        )
+    )
 
 
 def parse_args() -> argparse.Namespace:
@@ -35,13 +79,30 @@ def pick_model_key(model_arg: str | None) -> str:
     if model_arg:
         return model_arg
 
-    console.print("[bold]Choose a model to download:[/bold]")
-    console.print("1) tinyllama  -> TinyLlama/TinyLlama-1.1B-Chat-v1.0")
-    console.print("2) smollm2    -> HuggingFaceTB/SmolLM2-135M")
-    console.print("3) smollm3    -> HuggingFaceTB/SmolLM3-3B")
+    table = Table(box=box.SIMPLE_HEAVY, expand=True, header_style="bold cyan")
+    table.add_column("#", style="bold cyan", no_wrap=True)
+    table.add_column("Key", style="white", no_wrap=True)
+    table.add_column("Model", style="green")
+    table.add_row("1", "tinyllama", MODEL_CHOICES["tinyllama"])
+    table.add_row("2", "smollm2", MODEL_CHOICES["smollm2"])
+    table.add_row("3", "smollm3", MODEL_CHOICES["smollm3"])
+    console.print(
+        Panel(
+            Group(
+                Text("Choose a model to download", style="bold white"),
+                Text("Models will be stored in the local ./models directory.", style="bright_black"),
+                Text(""),
+                table,
+            ),
+            title="[bold cyan]Model Picker[/bold cyan]",
+            border_style="cyan",
+            box=box.HEAVY,
+            padding=(1, 2),
+        )
+    )
 
     selection = Prompt.ask(
-        "Enter choice", choices=["1", "2", "3"], default="1"
+        "[bold cyan]Download model[/bold cyan]", choices=["1", "2", "3"], default="1"
     )
     if selection == "1":
         return "tinyllama"
@@ -56,6 +117,7 @@ def model_dir_for(model_id: str) -> Path:
 
 
 def main() -> None:
+    render_header()
     args = parse_args()
     token = os.getenv("HF_TOKEN") or os.getenv("HUGGINGFACEHUB_API_TOKEN")
     model_key = pick_model_key(args.model)
@@ -64,24 +126,35 @@ def main() -> None:
 
     model_dir.parent.mkdir(parents=True, exist_ok=True)
 
+    auth_state = "token detected" if token else "anonymous download"
     console.print(
-        Panel.fit(
-            f"Downloading [bold cyan]{model_id}[/bold cyan]\n"
-            f"to [yellow]{model_dir}[/yellow]",
-            title="Model Setup",
+        Panel(
+            Group(
+                Text.assemble(("Repository: ", "bold white"), (model_id, "bold cyan")),
+                Text.assemble(("Destination: ", "bold white"), (str(model_dir), "yellow")),
+                Text.assemble(("Auth: ", "bold white"), (auth_state, "magenta")),
+            ),
+            title="[bold cyan]Download Plan[/bold cyan]",
             border_style="cyan",
+            box=box.HEAVY,
+            padding=(1, 2),
         )
     )
 
-    path = snapshot_download(
-        repo_id=model_id,
-        local_dir=str(model_dir),
-        local_dir_use_symlinks=False,
-        token=token,
-        resume_download=True,
-    )
+    try:
+        with console.status("[bold cyan]Downloading model files...[/bold cyan]", spinner="dots"):
+            path = snapshot_download(
+                repo_id=model_id,
+                local_dir=str(model_dir),
+                local_dir_use_symlinks=False,
+                token=token,
+                resume_download=True,
+            )
+    except Exception as exc:
+        print_note(str(exc), title="Download Failed", style="red")
+        raise
 
-    console.print(f"[green]Model ready at:[/green] {path}")
+    print_note(f"Model ready at {path}", title="Download Complete", style="green")
 
 
 if __name__ == "__main__":
