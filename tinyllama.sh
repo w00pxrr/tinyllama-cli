@@ -252,7 +252,8 @@ bootstrap_only_if_requested() {
 run_cli_if_models_present() {
   if ! has_installed_model; then
     warn "No installed model found in $MODEL_DIR."
-    hint "Run: python download_model.py"
+    log "Launching download script..."
+    python download_model.py
     exit 0
   fi
 

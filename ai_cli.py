@@ -705,7 +705,8 @@ class TinyLlamaCLI:
 
                 if user_input == "/exit":
                     self._print_note("Session closed. See you next time.", style="magenta", title="Bye")
-                    return
+                    import sys
+                    sys.exit(0)
                 if user_input == "/help":
                     self._help()
                     continue
@@ -742,6 +743,66 @@ class TinyLlamaCLI:
             )
 
 
+# Model strength ranking (higher = more powerful)
+MODEL_STRENGTH = {
+    "SmolLM2-135M": 1,
+    "TinyLlama-1.1B-Chat-v1.0": 2,
+    "Qwen2.5-0.5B-Instruct": 3,
+}
+
+
+def assess_task_difficulty(user_input: str) -> str:
+    """Assess task difficulty based on user input.
+    
+    Returns:
+        "simple" for basic queries, "complex" for advanced tasks
+    """
+    text = user_input.lower().strip()
+    
+    # Complex task indicators
+    complex_indicators = [
+        "write a", "create a", "build a", "implement", "develop",
+        "explain in detail", "compare and contrast", "analyze",
+        "debug", "fix the code", "refactor", "architecture",
+        "design a", "plan a", "how would you", "what are the best",
+        "traduire", "escribe", "schreibe",  # foreign languages
+        "essay", "research", "report", "summary of",
+        "math", "calculate", "solve equation",
+        "code", "program", "function", "class", "api",
+        "story", "poem", "creative writing",
+    ]
+    
+    # Simple task indicators  
+    simple_indicators = [
+        "what is", "who is", "when did", "where is", "how do i",
+        "define", "what's the", "what does", "meaning of",
+        "quick", "simple", "basic", "just",
+        "hi", "hello", "hey", "thanks", "thank you",
+    ]
+    
+    # Check complexity
+    complex_score = sum(1 for indicator in complex_indicators if indicator in text)
+    simple_score = sum(1 for indicator in simple_indicators if indicator in text)
+    
+    # Length also factors in
+    if len(text) > 200:
+        complex_score += 1
+    if len(text) > 500:
+        complex_score += 1
+    
+    if complex_score > simple_score:
+        return "complex"
+    return "simple"
+
+
+def get_model_strength(model_name: str) -> int:
+    """Get the strength level of a model by name."""
+    for key, strength in MODEL_STRENGTH.items():
+        if key.lower() in model_name.lower():
+            return strength
+    return 2  # default to medium
+
+
 def discover_installed_models(models_root: Path = Path("models")) -> list[Path]:
     if not models_root.exists():
         return []
@@ -759,7 +820,11 @@ def select_installed_model(model_arg: str | None) -> tuple[Path, str]:
             "No installed models found in ./models. Run `python download_model.py` first."
         )
 
+    # Handle explicit model argument (including 'auto')
     if model_arg:
+        if model_arg.lower() == "auto":
+            return select_model_auto(installed)
+        
         candidate = Path(model_arg)
         if candidate.exists() and candidate.is_dir():
             return candidate, candidate.name
@@ -775,13 +840,21 @@ def select_installed_model(model_arg: str | None) -> tuple[Path, str]:
     table.add_column("#", style="bold cyan", no_wrap=True)
     table.add_column("Installed Model", style="white")
     table.add_column("Path", style="yellow")
+    
+    # Add auto option at the top
+    table.add_row("A", "[bold green]Auto[/bold green]", "Smart selection based on task")
+    
     for idx, model_dir in enumerate(installed, start=1):
-        table.add_row(str(idx), model_dir.name, str(model_dir))
+        strength = get_model_strength(model_dir.name)
+        strength_label = "★" * strength
+        table.add_row(str(idx), model_dir.name, f"{str(model_dir)} {strength_label}")
+    
     console.print(
         Panel(
             Group(
                 Text("Choose an installed model to launch", style="bold white"),
                 Text("Each folder under ./models with a config.json is listed below.", style="bright_black"),
+                Text("Use [bold green]A[/bold green] for Auto mode - it selects the right model based on your query.", style="bold cyan"),
                 Text(""),
                 table,
             ),
@@ -791,9 +864,56 @@ def select_installed_model(model_arg: str | None) -> tuple[Path, str]:
             padding=(1, 2),
         )
     )
-    choices = [str(i) for i in range(1, len(installed) + 1)]
-    selection = Prompt.ask("[bold cyan]Launch model[/bold cyan]", choices=choices, default="1")
+    
+    choices = ["A"] + [str(i) for i in range(1, len(installed) + 1)]
+    selection = Prompt.ask("[bold cyan]Launch model[/bold cyan]", choices=choices, default="A")
+    
+    if selection.upper() == "A":
+        return select_model_auto(installed)
+    
     chosen = installed[int(selection) - 1]
+    return chosen, chosen.name
+
+
+def select_model_auto(installed: list[Path]) -> tuple[Path, str]:
+    """Automatically select a model based on the user's intended task."""
+    console.print()
+    console.print(Panel(
+        Text(
+            "Auto mode: Tell me what you want to discuss or what task you need help with.\n"
+            "I'll select the appropriate model based on the complexity of your request.\n\n"
+            "Examples:\n"
+            "  • Simple questions → TinyLlama (fast, efficient)\n"
+            "  • Complex tasks → SmolLM3 (more capable)",
+            style="bold cyan"
+        ),
+        title="[bold green]Auto Model Selection[/bold green]",
+        border_style="green",
+        box=box.ROUNDED,
+        padding=(1, 2),
+    ))
+    
+    user_input = Prompt.ask("[bold green]What would you like to do?[/bold green]").strip()
+    
+    if not user_input:
+        console.print("[yellow]No input provided, defaulting to first model.[/yellow]")
+        chosen = installed[0]
+        return chosen, chosen.name
+    
+    difficulty = assess_task_difficulty(user_input)
+    
+    # Sort models by strength
+    sorted_models = sorted(installed, key=lambda m: get_model_strength(m.name))
+    
+    if difficulty == "complex":
+        # Use the most powerful available model
+        chosen = sorted_models[-1]
+        console.print(f"[bold cyan]Detected complex task → Using {chosen.name}[/bold cyan]")
+    else:
+        # Use a weaker but faster model for simple tasks
+        chosen = sorted_models[0]
+        console.print(f"[bold cyan]Detected simple task → Using {chosen.name}[/bold cyan]")
+    
     return chosen, chosen.name
 
 
@@ -803,7 +923,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--model",
-        help="Installed model folder name (inside ./models) or full local path.",
+        help="Installed model folder name (inside ./models), full local path, or 'auto' for smart selection.",
     )
     return parser.parse_args()
 

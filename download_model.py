@@ -18,7 +18,7 @@ from rich.text import Text
 MODEL_CHOICES = {
     "tinyllama": "TinyLlama/TinyLlama-1.1B-Chat-v1.0",
     "smollm2": "HuggingFaceTB/SmolLM2-135M",
-    "smollm3": "HuggingFaceTB/SmolLM3-3B",
+    "qwen": "Qwen/Qwen2.5-0.5B-Instruct",
 }
 
 console = Console()
@@ -85,7 +85,7 @@ def pick_model_key(model_arg: str | None) -> str:
     table.add_column("Model", style="green")
     table.add_row("1", "tinyllama", MODEL_CHOICES["tinyllama"])
     table.add_row("2", "smollm2", MODEL_CHOICES["smollm2"])
-    table.add_row("3", "smollm3", MODEL_CHOICES["smollm3"])
+    table.add_row("3", "qwen", MODEL_CHOICES["qwen"])
     console.print(
         Panel(
             Group(
@@ -108,7 +108,7 @@ def pick_model_key(model_arg: str | None) -> str:
         return "tinyllama"
     if selection == "2":
         return "smollm2"
-    return "smollm3"
+    return "qwen"
 
 
 def model_dir_for(model_id: str) -> Path:
