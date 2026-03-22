@@ -1,0 +1,99 @@
+name: Build CLI Artifacts
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/build-cli-artifacts.yml"
+      - "ai_cli.py"
+      - "chat.py"
+      - "download_model.py"
+      - "web_search.py"
+      - "requirements.txt"
+      - "tinyllama.sh"
+      - "packaging/**"
+      - "scripts/**"
+
+jobs:
+  macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Set up virtualenv
+        run: |
+          python -m venv .venv
+          .venv/bin/python -m pip install --upgrade pip
+          .venv/bin/python -m pip install pyinstaller
+          .venv/bin/python -m pip install -r requirements.txt
+
+      - name: Build macOS artifact
+        run: ./scripts/build_macos.sh
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tinyllama-cli-macos-arm64
+          path: dist/macos/tinyllama-cli-macos-arm64.zip
+
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Set up virtualenv
+        shell: pwsh
+        run: |
+          python -m venv .venv
+          .\.venv\Scripts\python.exe -m pip install --upgrade pip
+          .\.venv\Scripts\python.exe -m pip install pyinstaller
+          .\.venv\Scripts\python.exe -m pip install -r requirements.txt
+
+      - name: Build Windows artifact
+        shell: pwsh
+        run: .\scripts\build_windows.ps1
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tinyllama-cli-windows
+          path: dist/windows/tinyllama-cli-windows.zip
+
+  linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Linux packaging tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libfuse2
+          wget -q https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage -O /tmp/appimagetool
+          chmod +x /tmp/appimagetool
+
+      - name: Set up virtualenv
+        run: |
+          python -m venv .venv
+          .venv/bin/python -m pip install --upgrade pip
+          .venv/bin/python -m pip install pyinstaller
+          .venv/bin/python -m pip install -r requirements.txt
+
+      - name: Build Linux AppImage
+        run: APPIMAGE_TOOL=/tmp/appimagetool ./scripts/build_appimage.sh
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tinyllama-cli-linux-appimage
+          path: dist/linux/tinyllama-cli-x86_64.AppImage

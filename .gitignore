@@ -1,0 +1,17 @@
+__pycache__/
+*.pyc
+.venv/
+.env
+.pyinstaller-cache/
+build/
+dist/
+transcripts/
+training_data/
+cpp_gui/build/
+.vscode/
+.idea/
+*.log
+*.DS_Store
+models/
+build/
+dist/
