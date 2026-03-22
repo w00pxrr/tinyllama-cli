@@ -261,7 +261,7 @@ run_cli_if_models_present() {
   print_rule "Launch"
   success "Environment ready"
   log "Launching CLI..."
-  python chat.py
+  python ai_cli.py
 }
 
 main() {
