@@ -1,0 +1,64 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "tinyllama-cli"
+version = "0.1.0"
+description = "A polished terminal chat app powered by TinyLlama local model"
+readme = "README.md"
+license = {text = "Apache License 2.0"}
+requires-python = ">=3.9"
+authors = [
+    {name = "Parker Solomon"}
+]
+keywords = ["ai", "cli", "llm", "tinyllama", "terminal", "chat"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: End Users/Desktop",
+    "License :: OSI Approved :: Apache License 2.0",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Communications :: Chat",
+]
+
+dependencies = [
+    "transformers>=4.48.0",
+    "torch>=2.5.0",
+    "huggingface_hub>=0.27.0",
+    "rich>=13.9.0",
+    "sentencepiece>=0.2.0",
+    "safetensors>=0.5.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+    "black>=23.0.0",
+    "ruff>=0.1.0",
+]
+
+[project.scripts]
+tinyllama = "ai_cli:main"
+
+[project.urls]
+Homepage = "https://github.com/parkersolomon/ai"
+Repository = "https://github.com/parkersolomon/ai"
+Issues = "https://github.com/parkersolomon/ai/issues"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["ai_cli*", "web_search*", "download_model*"]
+exclude = ["tests*", "scripts*", "packaging*"]
+
+[tool.black]
+line-length = 100
+target-version = ["py39", "py310", "py311", "py312"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py39"
