@@ -17,7 +17,7 @@ A polished terminal chat app powered by a **local** model:
 ## Quick Start
 
 ```bash
-cd /Users/parkersolomon/ai
+cd /Path/to/tinyllama-cli
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
