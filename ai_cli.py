@@ -11,6 +11,7 @@ import os
 import platform
 import re
 import subprocess
+import time  # Move to top for caching
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -48,7 +49,7 @@ WEB_PROMPT_TEMPLATE = (
 console = Console()
 
 
-@dataclass
+@dataclass(slots=True)
 class GenerationConfig:
     temperature: float = 0.65
     top_p: float = 0.9
@@ -121,13 +122,17 @@ class TinyLlamaOptimizer:
 
 
 class TinyLlamaCLI:
-    def __init__(self, model_dir: Path, model_label: str) -> None:
+    USER_PROFILE_FILE = Path("training_data/user_profile.json")
+    
+    def __init__(self, model_dir: Path, model_label: str, auto_train: bool = False) -> None:
         if not model_dir.exists():
             raise SystemExit(
                 "Local model not found. Run `python download_model.py` first to download into models/."
             )
         self.model_dir = model_dir
         self.model_label = model_label
+        self.auto_train = auto_train
+        self.user_profile = self._load_user_profile()
 
         with console.status("[bold cyan]Loading tokenizer...[/bold cyan]", spinner="dots"):
             self.tokenizer = AutoTokenizer.from_pretrained(str(self.model_dir), use_fast=True)
@@ -143,10 +148,18 @@ class TinyLlamaCLI:
             ).to(device)
 
         self.device = device
-        self.history: list[dict[str, str]] = [{"role": "system", "content": SYSTEM_PROMPT}]
+        # Cache context limit once at load time
+        self._cached_context_limit: int | None = None
+        self._cached_ram_bytes: int | None = None
+        
+        # Use personalized system prompt with user info
+        personalized_prompt = self._get_personalized_system_prompt()
+        self.history: list[dict[str, str]] = [{"role": "system", "content": personalized_prompt}]
         self.last_prompt_tokens = 0
         self.last_response_tokens = 0
         self.turn_count = 0
+        self.last_user_message = None  # For /like and /dislike
+        self.last_assistant_message = None  # For /like and /dislike
 
     def _accent(self, value: str, style: str = "bold bright_cyan") -> Text:
         return Text(value, style=style)
@@ -300,8 +313,125 @@ class TinyLlamaCLI:
         if isinstance(result, float) and result.is_integer():
             return str(int(result))
         return str(result)
+    
+    def _rate_last_response(self, positive: bool) -> None:
+        """Rate the last response with /like or /dislike for training."""
+        if not self.last_user_message or not self.last_assistant_message:
+            self._print_note(
+                "No previous response to rate. Chat with the AI first!",
+                style="yellow",
+                title="Rate Error",
+            )
+            return
+        
+        rating_dir = Path("training_data/ratings")
+        rating_dir.mkdir(parents=True, exist_ok=True)
+        
+        rating_file = rating_dir / "ratings.jsonl"
+        
+        rating = {
+            "user_message": self.last_user_message,
+            "assistant_message": self.last_assistant_message,
+            "rating": 1 if positive else -1,
+            "timestamp": datetime.now().isoformat(),
+        }
+        
+        with rating_file.open("a", encoding="utf-8") as f:
+            f.write(json.dumps(rating, ensure_ascii=False) + "\n")
+        
+        if positive:
+            self._print_note(
+                "Thanks for the positive feedback! ✓\nThis will be used to improve future responses.",
+                style="green",
+                title="/like",
+            )
+        else:
+            self._print_note(
+                "Sorry the response wasn't helpful. 🙏\nThis feedback will help improve the AI.",
+                style="yellow",
+                title="/dislike",
+            )
+    
+    def _load_user_profile(self) -> dict:
+        """Load user profile from file, or prompt for it on first run."""
+        if self.USER_PROFILE_FILE.exists():
+            try:
+                with open(self.USER_PROFILE_FILE) as f:
+                    return json.load(f)
+            except Exception:
+                pass
+        
+        # First run - prompt for user info
+        console.print(Panel(
+            "[bold cyan]Welcome! Let's set up your profile.[/bold cyan]\n"
+            "This helps the AI remember your preferences.",
+            border_style="cyan",
+            box=box.ROUNDED,
+        ))
+        
+        name = Prompt.ask("[bold cyan]What's your name?[/bold cyan]", default="")
+        
+        if name:
+            # Get more info
+            location = Prompt.ask("[bold cyan]Where are you from?[/bold cyan]", default="")
+            interests = Prompt.ask("[bold cyan]What are your interests? (comma-separated)[/bold cyan]", default="")
+            occupation = Prompt.ask("[bold cyan]What's your occupation?[/bold cyan]", default="")
+            
+            profile = {
+                "name": name,
+                "location": location,
+                "interests": [i.strip() for i in interests.split(",") if i.strip()],
+                "occupation": occupation,
+                "created_at": datetime.now().isoformat(),
+            }
+            
+            # Save profile
+            self.USER_PROFILE_FILE.parent.mkdir(parents=True, exist_ok=True)
+            with open(self.USER_PROFILE_FILE, "w") as f:
+                json.dump(profile, f, indent=2)
+            
+            console.print(Panel(
+                f"[bold green]Profile saved![/bold green]\n"
+                f"Name: {name}\n"
+                f"Location: {location or 'Not set'}\n"
+                f"Interests: {', '.join(profile['interests']) or 'None'}",
+                border_style="green",
+                box=box.ROUNDED,
+            ))
+            
+            return profile
+        
+        return {}
+    
+    def _get_personalized_system_prompt(self) -> str:
+        """Get system prompt with user info injected."""
+        if not self.user_profile:
+            return SYSTEM_PROMPT
+        
+        profile_parts = []
+        if self.user_profile.get("name"):
+            profile_parts.append(f"The user's name is {self.user_profile['name']}.")
+        if self.user_profile.get("location"):
+            profile_parts.append(f"They are from {self.user_profile['location']}.")
+        if self.user_profile.get("occupation"):
+            profile_parts.append(f"They work as {self.user_profile['occupation']}.")
+        if self.user_profile.get("interests"):
+            interests = ", ".join(self.user_profile["interests"])
+            profile_parts.append(f"Their interests include: {interests}.")
+        
+        if profile_parts:
+            return SYSTEM_PROMPT + " " + " ".join(profile_parts)
+        
+        return SYSTEM_PROMPT
 
     def _available_ram_bytes(self) -> int | None:
+        # Cache RAM for 30 seconds to avoid repeated system calls
+        current_time = time.monotonic()
+        
+        if hasattr(self, '_cached_ram_time') and hasattr(self, '_cached_ram_bytes'):
+            if current_time - self._cached_ram_time < 30:  # 30 second TTL
+                return self._cached_ram_bytes
+        
         if self.device == "cuda":
             try:
                 free_bytes, _total_bytes = torch.cuda.mem_get_info()
@@ -375,17 +505,24 @@ class TinyLlamaCLI:
                     return int(status.ullAvailPhys)
             except Exception:
                 pass
-
+        
         return None
-
+    
     def _resolve_context_limit(self) -> int:
+        # Cache context limit to avoid repeated config lookups
+        if self._cached_context_limit is not None:
+            return self._cached_context_limit
+        
         model_limit = getattr(self.model.config, "max_position_embeddings", None)
         tokenizer_limit = getattr(self.tokenizer, "model_max_length", None)
 
         if isinstance(model_limit, int) and model_limit > 0:
+            self._cached_context_limit = model_limit
             return model_limit
         if isinstance(tokenizer_limit, int) and 0 < tokenizer_limit < 1_000_000:
+            self._cached_context_limit = tokenizer_limit
             return tokenizer_limit
+        self._cached_context_limit = 2048
         return 2048
 
     def _dynamic_max_new_tokens(self, prompt_tokens: int, requested_tokens: int) -> int:
@@ -397,20 +534,20 @@ class TinyLlamaCLI:
             return max(32, min(requested_tokens, remaining_context))
 
         available_gib = available_bytes / (1024 ** 3)
-        if available_gib < 1.5:
+        if available_gib < 8:
             memory_cap = 96
-        elif available_gib < 2.5:
+        elif available_gib < 12:
             memory_cap = 160
-        elif available_gib < 4:
+        elif available_gib < 16:
             memory_cap = 224
-        elif available_gib < 6:
+        elif available_gib < 24:
             memory_cap = 320
-        elif available_gib < 8:
+        elif available_gib < 32:
             memory_cap = 448
         else:
             memory_cap = 640
 
-        if available_gib >= 4:
+        if available_gib >= 12:
             target_tokens = max(requested_tokens, min(memory_cap, requested_tokens + 64))
         else:
             target_tokens = min(requested_tokens, memory_cap)
@@ -591,10 +728,60 @@ class TinyLlamaCLI:
             )
         return TRAINING_DATA_FILE, len(examples)
 
-    def _save_and_export_training(self, quiet: bool = False) -> tuple[Path, Path, int]:
+    def _save_and_export_training(self, quiet: bool = False, auto_train: bool = False) -> tuple[Path, Path, int]:
         transcript_path = self._save_chat(quiet=quiet)
         training_path, count = self._append_training_data(transcript_path, quiet=quiet)
+        
+        # Optionally run auto-training
+        if auto_train:
+            self._run_auto_training(transcript_path)
+        
         return transcript_path, training_path, count
+    
+    def _run_auto_training(self, transcript_path: Path) -> None:
+        """Run automatic fine-tuning in background after CLI exits."""
+        import sys
+        
+        console.print()
+        console.print(Panel(
+            "[bold cyan]Background training will start after exit...[/bold cyan]\n"
+            "Training runs in background - you can continue using the CLI.",
+            border_style="cyan",
+            box=box.ROUNDED,
+        ))
+        
+        # Spawn training in background subprocess - runs AFTER this process exits
+        # This way training doesn't block the CLI
+        try:
+            # Build the command to run training after exit
+            cmd = [
+                sys.executable, "train.py",
+                "--latest",
+                "--model", str(self.model_dir),
+            ]
+            
+            # Use Popen to start background process
+            # Training will run independently after CLI closes
+            subprocess.Popen(
+                cmd,
+                cwd=str(Path.cwd()),
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.PIPE,
+                start_new_session=True,  # Detach from parent
+            )
+            
+            console.print(Panel(
+                "[bold green]Training scheduled in background[/bold green]\n"
+                "It will start after you close the CLI.",
+                border_style="green",
+                box=box.ROUNDED,
+            ))
+        except Exception as e:
+            console.print(Panel(
+                f"[red]Failed to schedule training:[/red]\n{e}",
+                title="Error",
+                border_style="red",
+            ))
 
     def _fetch_web_context(self, user_input: str) -> tuple[str | None, list[WebResult]]:
         if not should_search_web(user_input):
@@ -632,10 +819,24 @@ class TinyLlamaCLI:
         )
         return WEB_PROMPT_TEMPLATE.format(web_context=format_web_context(results)), results
 
+    def _reset_session(self) -> None:
+        """Reset the conversation history when context limit is exceeded."""
+        personalized_prompt = self._get_personalized_system_prompt()
+        self.history = [{"role": "system", "content": personalized_prompt}]
+        self.last_prompt_tokens = 0
+        self.last_response_tokens = 0
+        self.turn_count = 0
+        self._print_note(
+            "Context limit reached - starting fresh session",
+            style="yellow",
+            title="Session Reset",
+        )
+
     def _reply(self, user_input: str) -> GenerationConfig:
         cfg = TinyLlamaOptimizer.tune(user_input, turns=len(self.history))
         normalized_input = normalize_query(user_input)
         self.history.append({"role": "user", "content": normalized_input})
+        self.last_user_message = user_input  # Track for /like and /dislike
 
         expression = self._extract_math_expression(user_input)
         if expression is not None:
@@ -648,6 +849,8 @@ class TinyLlamaCLI:
                 self.last_prompt_tokens = 0
                 self.last_response_tokens = len(self.tokenizer.encode(answer, add_special_tokens=False))
                 self.turn_count += 1
+                self.last_user_message = user_input  # Track for /like and /dislike
+                self.last_assistant_message = answer  # Track for /like and /dislike
                 self.history.append({"role": "assistant", "content": answer})
                 self._render_assistant_panel(answer)
                 return cfg
@@ -659,13 +862,27 @@ class TinyLlamaCLI:
         input_ids = inputs["input_ids"].to(self.model.device)
         attention_mask = inputs["attention_mask"].to(self.model.device)
         self.last_prompt_tokens = int(input_ids.shape[1])
+        
+        # Check if context limit exceeded - reset session if needed
+        context_limit = self._resolve_context_limit()
+        buffer_tokens = 64  # Small buffer to ensure we don't hit exact limit
+        if self.last_prompt_tokens > context_limit - buffer_tokens:
+            # Context limit would be exceeded - reset the session
+            self._reset_session()
+            # Re-build the prompt with fresh history
+            prompt = self._prompt_template(extra_system=extra_system)
+            inputs = self.tokenizer(prompt, return_tensors="pt")
+            input_ids = inputs["input_ids"].to(self.model.device)
+            attention_mask = inputs["attention_mask"].to(self.model.device)
+            self.last_prompt_tokens = int(input_ids.shape[1])
+        
         cfg.max_new_tokens = self._dynamic_max_new_tokens(
             prompt_tokens=self.last_prompt_tokens,
             requested_tokens=cfg.max_new_tokens,
         )
 
         generation_cfg = copy.deepcopy(self.model.generation_config)
-        generation_cfg.max_length = None
+        # Only use max_new_tokens, not max_length (avoids conflict)
         generation_cfg.max_new_tokens = cfg.max_new_tokens
         generation_cfg.temperature = cfg.temperature
         generation_cfg.top_p = cfg.top_p
@@ -676,7 +893,7 @@ class TinyLlamaCLI:
         generation_cfg.pad_token_id = self.tokenizer.eos_token_id
 
         with console.status("[bold cyan]TinyLlama is thinking...[/bold cyan]", spinner="dots"):
-            with torch.inference_mode():
+            with torch.no_grad():
                 output_ids = self.model.generate(
                     input_ids=input_ids,
                     attention_mask=attention_mask,
@@ -688,6 +905,7 @@ class TinyLlamaCLI:
         self.turn_count += 1
         answer = self._clean_output(self.tokenizer.decode(new_tokens, skip_special_tokens=False))
         self.history.append({"role": "assistant", "content": answer})
+        self.last_assistant_message = answer  # Track for /like and /dislike
         self._render_assistant_panel(answer)
         return cfg
 
@@ -718,7 +936,13 @@ class TinyLlamaCLI:
                     self._print_note("Conversation cleared and system prompt reset.", style="yellow", title="Cleared")
                     continue
                 if user_input == "/save":
-                    self._save_and_export_training()
+                    self._save_and_export_training(auto_train=self.auto_train)
+                    continue
+                if user_input == "/like":
+                    self._rate_last_response(positive=True)
+                    continue
+                if user_input == "/dislike":
+                    self._rate_last_response(positive=False)
                     continue
                 if user_input == "/settings":
                     self._show_settings(last_cfg)
@@ -734,7 +958,7 @@ class TinyLlamaCLI:
         except (EOFError, KeyboardInterrupt):
             self._print_note("Session interrupted. Exiting cleanly.", style="yellow", title="Interrupted")
         finally:
-            transcript_path, training_path, count = self._save_and_export_training(quiet=True)
+            transcript_path, training_path, count = self._save_and_export_training(quiet=True, auto_train=self.auto_train)
             self._print_note(f"Auto-saved transcript to {transcript_path}", style="green", title="Auto Save")
             self._print_note(
                 f"Auto-appended {count} training examples to {training_path}",
@@ -748,6 +972,7 @@ MODEL_STRENGTH = {
     "SmolLM2-135M": 1,
     "TinyLlama-1.1B-Chat-v1.0": 2,
     "Qwen2.5-0.5B-Instruct": 3,
+    "NVIDIA-Nemotron": 4,
 }
 
 
@@ -808,8 +1033,12 @@ def discover_installed_models(models_root: Path = Path("models")) -> list[Path]:
         return []
     model_dirs = []
     for child in sorted(models_root.iterdir()):
-        if child.is_dir() and (child / "config.json").exists():
-            model_dirs.append(child)
+        if child.is_dir():
+            # Check for either config.json (HuggingFace format) or .gguf files (llama.cpp format)
+            has_config = (child / "config.json").exists()
+            has_gguf = list(child.glob("*.gguf"))
+            if has_config or has_gguf:
+                model_dirs.append(child)
     return model_dirs
 
 
@@ -831,6 +1060,9 @@ def select_installed_model(model_arg: str | None) -> tuple[Path, str]:
 
         for model_dir in installed:
             if model_dir.name == model_arg:
+                return model_dir, model_dir.name
+            # Also check for partial matches (e.g., "nvidia_nemotron" matches "NVIDIA-Nemotron-3-Nano-4B-GGUF")
+            if model_arg.lower().replace("_", "-") in model_dir.name.lower():
                 return model_dir, model_dir.name
         raise SystemExit(
             f"Model '{model_arg}' not found. Installed: {', '.join(m.name for m in installed)}"
@@ -925,13 +1157,18 @@ def parse_args() -> argparse.Namespace:
         "--model",
         help="Installed model folder name (inside ./models), full local path, or 'auto' for smart selection.",
     )
+    parser.add_argument(
+        "--auto-train",
+        action="store_true",
+        help="Automatically fine-tune model after each conversation using LoRA.",
+    )
     return parser.parse_args()
 
 
 def main() -> None:
     args = parse_args()
     model_dir, model_label = select_installed_model(args.model)
-    cli = TinyLlamaCLI(model_dir=model_dir, model_label=model_label)
+    cli = TinyLlamaCLI(model_dir=model_dir, model_label=model_label, auto_train=args.auto_train)
     cli.run()
 
 

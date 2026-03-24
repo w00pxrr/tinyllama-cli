@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import subprocess
 from pathlib import Path
 
 from huggingface_hub import snapshot_download
@@ -19,6 +20,7 @@ MODEL_CHOICES = {
     "tinyllama": "TinyLlama/TinyLlama-1.1B-Chat-v1.0",
     "smollm2": "HuggingFaceTB/SmolLM2-135M",
     "qwen": "Qwen/Qwen2.5-0.5B-Instruct",
+    "nvidia_nemotron": "nvidia/NVIDIA-Nemotron-3-Nano-4B-GGUF",
 }
 
 console = Console()
@@ -36,7 +38,11 @@ def render_header() -> None:
                 ("  ", "white"),
                 ("smollm2", "bold green"),
                 ("  ", "white"),
-                ("smollm3", "bold magenta"),
+                ("qwen", "bold yellow"),
+                ("  ", "white"),
+                ("nvidia_nemotron", "bold magenta"),
+                ("  ", "white"),
+                ("choose more", "bold red"),
             )
         ),
     )
@@ -69,8 +75,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--model",
-        choices=list(MODEL_CHOICES.keys()),
-        help="Model key: tinyllama, smollm2, or smollm3",
+        help="Model key: tinyllama, smollm2, qwen, nvidia_nemotron, or provide any HuggingFace model ID (e.g., org/model)",
     )
     return parser.parse_args()
 
@@ -86,6 +91,8 @@ def pick_model_key(model_arg: str | None) -> str:
     table.add_row("1", "tinyllama", MODEL_CHOICES["tinyllama"])
     table.add_row("2", "smollm2", MODEL_CHOICES["smollm2"])
     table.add_row("3", "qwen", MODEL_CHOICES["qwen"])
+    table.add_row("4", "nvidia_nemotron", MODEL_CHOICES["nvidia_nemotron"])
+    table.add_row("5", "choose more", "Type any HuggingFace model ID")
     console.print(
         Panel(
             Group(
@@ -102,13 +109,32 @@ def pick_model_key(model_arg: str | None) -> str:
     )
 
     selection = Prompt.ask(
-        "[bold cyan]Download model[/bold cyan]", choices=["1", "2", "3"], default="1"
+        "[bold cyan]Download model[/bold cyan]", choices=["1", "2", "3", "4", "5"], default="1"
     )
     if selection == "1":
         return "tinyllama"
     if selection == "2":
         return "smollm2"
-    return "qwen"
+    if selection == "3":
+        return "qwen"
+    if selection == "4":
+        return "nvidia_nemotron"
+    
+    # "choose more" - prompt for custom HuggingFace model ID
+    custom_model_id = Prompt.ask(
+        "[bold cyan]Enter HuggingFace model ID[/bold cyan]",
+        default="",
+    )
+    if not custom_model_id:
+        print_note("No model ID provided, using default.", title="Info", style="yellow")
+        return "tinyllama"
+    
+    # Validate the format (should contain "/")
+    if "/" not in custom_model_id:
+        print_note("Invalid model ID format. Expected: org/model (e.g., meta/Llama-3-8B)", title="Error", style="red")
+        return "tinyllama"
+    
+    return custom_model_id
 
 
 def model_dir_for(model_id: str) -> Path:
@@ -117,11 +143,32 @@ def model_dir_for(model_id: str) -> Path:
 
 
 def main() -> None:
+    import sys
     render_header()
     args = parse_args()
+    
+    # Check for token in environment first
     token = os.getenv("HF_TOKEN") or os.getenv("HUGGINGFACEHUB_API_TOKEN")
+    
+    # If no token in env, prompt the user
+    if not token:
+        console.print()
+        token_input = Prompt.ask(
+            "[bold cyan]HuggingFace Token (optional)[/bold cyan]\n" 
+            "[dim]Press Enter to skip (anonymous download may fail for gated models)[/dim]",
+            default="",
+        )
+        token = token_input if token_input else None
+    
     model_key = pick_model_key(args.model)
-    model_id = MODEL_CHOICES[model_key]
+    
+    # Check if model_key is a custom model ID (not in predefined choices)
+    if model_key not in MODEL_CHOICES:
+        # It's a custom model ID
+        model_id = model_key
+    else:
+        model_id = MODEL_CHOICES[model_key]
+    
     model_dir = model_dir_for(model_id)
 
     model_dir.parent.mkdir(parents=True, exist_ok=True)
@@ -155,6 +202,13 @@ def main() -> None:
         raise
 
     print_note(f"Model ready at {path}", title="Download Complete", style="green")
+    
+    # Launch the chat CLI after download
+    console.print("[bold cyan]Launching chat CLI...[/bold cyan]")
+    try:
+        subprocess.run([sys.executable, "ai_cli.py"], check=True)
+    except Exception as exc:
+        print_note(f"Failed to launch chat CLI: {exc}", title="Launch Error", style="yellow")
 
 
 if __name__ == "__main__":
