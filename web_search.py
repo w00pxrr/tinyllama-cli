@@ -28,19 +28,45 @@ def should_search_web(user_input: str) -> bool:
         return True
 
     hints = (
+        # Time-sensitive queries
         "latest",
         "today",
         "current",
         "currently",
         "recent",
         "news",
+        "breaking",
+        "update",
+        # Web-specific requests
         "search the web",
         "look it up",
         "online",
         "on the web",
         "what happened",
+        "find information",
+        "google",
+        "bing",
+        # Real-time data
         "stock price",
         "weather",
+        "price of",
+        "cost of",
+        "worth",
+        # Specific events
+        "what's happening",
+        "what happened",
+        "who won",
+        "score",
+        # Tech/programming
+        "github",
+        "repository",
+        "documentation",
+        "version",
+        "release",
+        # Current events
+        "2024",
+        "2025",
+        "2026",
     )
     return any(hint in text for hint in hints)
 

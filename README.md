@@ -1,6 +1,6 @@
-# TinyLlama CLI
+# TinyLlama GUI
 
-A polished terminal chat app powered by **local** language models with rich UI, automatic prompt tuning, and training data export.
+A modern GUI chat application powered by **local** language models with buttons for rating, mode selection, and settings.
 
 ## Table of Contents
 
@@ -27,21 +27,23 @@ A polished terminal chat app powered by **local** language models with rich UI, 
 
 ## Features
 
-- **Local Inference**: Run models locally on your machine (TinyLlama, SmolLM2, Qwen, Nemotron, and more)
-- **Rich Terminal UI**: Fancy panels, markdown rendering, status spinners
-- **Auto-Tuning**: Runtime prompt-aware optimization for better responses
+- **GUI Interface**: Modern native GUI with clickable buttons
+- **Rate Responses**: Like/Dislike buttons to provide feedback
+- **Mode Selection**: Toggle between questions, code, academic, math modes
+- **Settings Panel**: Adjust temperature, top_p, top_k, max_tokens
+- **Local Inference**: Run models locally on your machine
 - **Training Data Export**: Automatic export to JSONL format for fine-tuning
 - **Transcript Saving**: Save and reload chat histories
 - **Multiple Model Support**: Download and use various models from HuggingFace
 - **Web Search Integration**: Automatic search for recent information
 
-### Built-in Commands
+### GUI Buttons
 
-- `/help` - Show available commands
-- `/settings` - View and adjust generation parameters
-- `/clear` - Clear chat history
-- `/save` - Save transcript and export training data
-- `/exit` - Exit and auto-save
+- **Like/Dislike**: Rate AI responses after they appear
+- **Mode**: Click to select AI mode (questions, code, academic, math)
+- **Settings**: Configure generation parameters
+- **Clear Chat**: Reset the conversation
+- **Save Chat**: Export conversation to JSON
 
 ---
 
@@ -58,7 +60,7 @@ The bootstrap script will automatically:
 3. Install dependencies from `requirements.txt`
 4. Prompt for HuggingFace token (optional)
 5. Download a model (if none is installed)
-6. Launch the chat CLI
+6. Launch the GUI
 
 After download, your model files are in:
 
@@ -71,8 +73,6 @@ models/
 ---
 
 ## Installation
-
-### Manual Setup
 
 ```bash
 # Create virtual environment
@@ -93,22 +93,34 @@ export HF_TOKEN="your_huggingface_token_here"
 # Download a model
 python download_model.py
 
-# Start the CLI
-python ai_cli.py
+# Run the GUI
+```bash
+./tinyllama_gui/target/release/tinyllama_gui
 ```
 
-### Bootstrap Script Options
+Or build and run:
+```bash
+cd tinyllama_gui
+cargo run --release
+```
+
+### Manual Setup
 
 ```bash
-# Full setup + launch
-./tinyllama.sh
+# Create virtual environment
+python3 -m venv .venv
 
-# Download only (no CLI)
-./tinyllama.sh --bootstrap-only
+# Activate (Linux/macOS)
+source .venv/bin/activate
 
-# Download specific model
-./tinyllama.sh --model tinyllama
-./tinyllama.sh --model nvidia_nemotron
+# Install dependencies
+pip install -r requirements.txt
+
+# Download a model
+python download_model.py
+
+# Run the GUI
+./tinyllama_gui/target/release/tinyllama_gui
 ```
 
 ---

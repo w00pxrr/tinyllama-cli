@@ -5,6 +5,7 @@ PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 VENV_DIR="$PROJECT_ROOT/.venv"
 MODEL_DIR="$PROJECT_ROOT/models"
 REQ_FILE="$PROJECT_ROOT/requirements.txt"
+GUI_DIR="$PROJECT_ROOT/tinyllama_gui"
 
 if [ -t 1 ]; then
   C_RESET="$(printf '\033[0m')"
@@ -28,7 +29,7 @@ fi
 
 print_header() {
   printf "\n%s%sTinyLlama Bootstrap%s\n" "$C_BOLD" "$C_CYAN" "$C_RESET"
-  printf "%sPrepare Python, install dependencies, and launch local chat%s\n\n" "$C_DIM" "$C_RESET"
+  printf "%sPrepare Python, install dependencies, build GUI, and launch%s\n\n" "$C_DIM" "$C_RESET"
 }
 
 print_rule() {
@@ -59,6 +60,7 @@ show_environment() {
   printf "%sProject%s  %s\n" "$C_BOLD" "$C_RESET" "$PROJECT_ROOT"
   printf "%sVenv%s     %s\n" "$C_BOLD" "$C_RESET" "$VENV_DIR"
   printf "%sModels%s   %s\n" "$C_BOLD" "$C_RESET" "$MODEL_DIR"
+  printf "%sGUI%s      %s\n" "$C_BOLD" "$C_RESET" "$GUI_DIR"
   printf "\n"
 }
 
@@ -73,6 +75,84 @@ run_as_root() {
     sudo "$@"
   else
     fail "Need elevated privileges to run: $*"
+    exit 1
+  fi
+}
+
+ensure_node() {
+  if have_cmd node && have_cmd npm; then
+    success "Using Node.js: $(node --version)"
+    return
+  fi
+  
+  warn "Node.js not found. Installing via nvm..."
+  
+  if ! have_cmd curl; then
+    fail "curl is required to install Node.js"
+    exit 1
+  fi
+  
+  # Install nvm
+  curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.0/install.sh | bash
+  
+  # Source nvm
+  export NVM_DIR="$HOME/.nvm"
+  # shellcheck disable=SC1091
+  [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
+  
+  nvm install --lts
+  nvm use --lts
+  
+  if have_cmd node && have_cmd npm; then
+    success "Using Node.js: $(node --version)"
+  else
+    fail "Node.js installation appears to have failed."
+    exit 1
+  fi
+}
+
+build_gui() {
+  if [ -d "$GUI_DIR/release/mac-arm64/TinyLlama GUI.app" ]; then
+    success "Using existing GUI app"
+    return
+  fi
+  
+  if [ -d "$GUI_DIR/dist" ] && [ -f "$GUI_DIR/package.json" ]; then
+    success "Using existing GUI build"
+    return
+  fi
+  
+  log "Building GUI (this may take a few minutes)..."
+  
+  cd "$GUI_DIR"
+  
+  # Install dependencies if needed
+  if [ ! -d "node_modules" ]; then
+    if have_cmd pnpm; then
+      pnpm install
+    elif have_cmd npm; then
+      npm install
+    else
+      fail "No package manager found (npm or pnpm required)"
+      exit 1
+    fi
+  fi
+  
+  # Build the renderer
+  if have_cmd pnpm; then
+    pnpm run build
+  else
+    npm run build
+  fi
+  
+  cd "$PROJECT_ROOT"
+  
+  if [ -d "$GUI_DIR/release/mac-arm64/TinyLlama GUI.app" ]; then
+    success "GUI built successfully"
+  elif [ -d "$GUI_DIR/dist" ]; then
+    success "GUI renderer built successfully"
+  else
+    fail "GUI build failed"
     exit 1
   fi
 }
@@ -249,7 +329,7 @@ bootstrap_only_if_requested() {
   exit 0
 }
 
-run_cli_if_models_present() {
+run_gui_if_models_present() {
   if ! has_installed_model; then
     warn "No installed model found in $MODEL_DIR."
     log "Launching download script..."
@@ -260,8 +340,22 @@ run_cli_if_models_present() {
   cd "$PROJECT_ROOT"
   print_rule "Launch"
   success "Environment ready"
-  log "Launching CLI..."
-  python ai_cli.py
+  log "Launching GUI..."
+  
+  # Try to launch the app if it exists
+  if [ -d "$GUI_DIR/release/mac-arm64/TinyLlama GUI.app" ]; then
+    open "$GUI_DIR/release/mac-arm64/TinyLlama GUI.app"
+  elif [ -d "$GUI_DIR/dist" ]; then
+    cd "$GUI_DIR"
+    if have_cmd pnpm; then
+      pnpm run start
+    else
+      npm run start
+    fi
+  else
+    fail "GUI not built. Run bootstrap first."
+    exit 1
+  fi
 }
 
 main() {
@@ -276,9 +370,13 @@ main() {
   activate_venv
   print_rule "Dependencies"
   install_dependencies
+  print_rule "Node.js"
+  ensure_node
+  print_rule "Build"
+  build_gui
   print_rule "Models"
   bootstrap_only_if_requested
-  run_cli_if_models_present
+  run_gui_if_models_present
 }
 
 main "$@"

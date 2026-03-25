@@ -1,8 +1,8 @@
 # Usage Guide
 
-This guide explains how to use the TinyLlama CLI for chatting with local language models.
+This guide explains how to use the TinyLlama GUI for chatting with local language models.
 
-## Starting the CLI
+## Starting the GUI
 
 ### Quick Start
 
@@ -12,23 +12,13 @@ After installation, simply run:
 ./tinyllama.sh
 ```
 
-This will start the interactive chat interface.
-
-### Manual Start
-
-```bash
-# Activate virtual environment (if not using tinyllama.sh)
-source .venv/bin/activate
-
-# Start the CLI
-python ai_cli.py
-```
+This will start the interactive GUI.
 
 ---
 
-## Model Selection
+## GUI Interface
 
-When you start the CLI, it will show you a list of installed models:
+The GUI provides buttons for all interactions:
 
 ```
 ╔════════════════════════════════════════════════════════════════╗
@@ -64,9 +54,16 @@ python ai_cli.py --model auto  # Smart selection
 
 ---
 
-## Chat Interface
+## GUI Interface
 
-Once a model is selected, you'll see the chat interface:
+The GUI provides buttons for all interactions:
+
+- **Mode Button**: Click to select AI mode (questions, code, academic, math)
+- **Settings Button**: Opens settings panel for generation parameters
+- **Like/Dislike Buttons**: Appear after AI responses to rate them
+- **Send Button**: Send your message to the AI
+- **Clear Chat**: Reset the conversation
+- **Save Chat**: Export conversation to JSON
 
 ```
 ╔════════════════════════════════════════════════════════════════╗
@@ -79,7 +76,7 @@ Once a model is selected, you'll see the chat interface:
 ╚════════════════════════════════════════════════════════════════╝
 ```
 
-### Sending Messages
+# When you start the GUI, it will automatically load the model.
 
 Simply type your message and press Enter. The model will respond with generated text.
 

@@ -1,6 +1,6 @@
 # Installation Guide
 
-This guide covers all the ways to install and set up TinyLlama CLI on your system.
+This guide covers all the ways to install and set up TinyLlama GUI on your system.
 
 ## Quick Start
 
@@ -16,7 +16,7 @@ The bootstrap script will automatically:
 2. Create a virtual environment (`.venv`)
 3. Install dependencies from `requirements.txt`
 4. Download a model (if none is installed)
-5. Launch the chat CLI
+5. Launch the GUI
 
 ---
 
@@ -81,16 +81,19 @@ python download_model.py
 
 This will prompt you to select a model. See [Model Download](model-download.md) for more options.
 
-### Step 6: Start the Chat CLI
+### Step 6: Run the GUI
 
-```bash
-python ai_cli.py
-```
-
-Or use the bootstrap script:
+After building (or using pre-built), run:
 
 ```bash
 ./tinyllama.sh
+```
+
+Or directly:
+
+```bash
+cd tinyllama_gui
+npm run start
 ```
 
 ---

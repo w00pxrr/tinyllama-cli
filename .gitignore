@@ -1,3 +1,4 @@
+# Python
 __pycache__/
 *.pyc
 .venv/
@@ -5,13 +6,31 @@ __pycache__/
 .pyinstaller-cache/
 build/
 dist/
-transcripts/
-training_data/
-cpp_gui/build/
-.vscode/
-.idea/
 *.log
 *.DS_Store
+
+# Models & Data
 models/
-build/
-dist/
+transcripts/
+training_data/
+chat_history.json
+
+# Rust GUI
+tinyllama_gui/target/
+tinyllama_gui/Cargo.lock
+
+# Electron GUI
+tinyllama_gui/release/
+
+# IDE
+.vscode/
+.idea/
+
+# Misc
+.pyinstaller-cache/
+cpp_gui/build/
+/node_modules/
+/dist/
+tinyllama_gui/dist/
+tinyllama_gui/build/
+tinyllama_gui/node_modules/
