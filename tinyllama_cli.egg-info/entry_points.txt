@@ -1,0 +1,2 @@
+[console_scripts]
+tinyllama = ai_cli:main

@@ -6,6 +6,7 @@ VENV_DIR="$PROJECT_ROOT/.venv"
 MODEL_DIR="$PROJECT_ROOT/models"
 REQ_FILE="$PROJECT_ROOT/requirements.txt"
 GUI_DIR="$PROJECT_ROOT/tinyllama_gui"
+# GUI_DIR is kept for legacy reference
 
 if [ -t 1 ]; then
   C_RESET="$(printf '\033[0m')"
@@ -60,7 +61,6 @@ show_environment() {
   printf "%sProject%s  %s\n" "$C_BOLD" "$C_RESET" "$PROJECT_ROOT"
   printf "%sVenv%s     %s\n" "$C_BOLD" "$C_RESET" "$VENV_DIR"
   printf "%sModels%s   %s\n" "$C_BOLD" "$C_RESET" "$MODEL_DIR"
-  printf "%sGUI%s      %s\n" "$C_BOLD" "$C_RESET" "$GUI_DIR"
   printf "\n"
 }
 
@@ -370,13 +370,19 @@ main() {
   activate_venv
   print_rule "Dependencies"
   install_dependencies
-  print_rule "Node.js"
-  ensure_node
-  print_rule "Build"
-  build_gui
   print_rule "Models"
-  bootstrap_only_if_requested
-  run_gui_if_models_present
+  
+  # Check if model is installed, prompt to download if not
+  if ! has_installed_model; then
+    warn "No installed model found in $MODEL_DIR."
+    log "Launching download script..."
+    python download_model.py
+  fi
+  
+  print_rule "Launch"
+  success "Environment ready"
+  log "Launching CLI (with sudo for keyboard hotkey)..."
+  sudo -E python ai_cli.py
 }
 
 main "$@"
